@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Flask
+instance/
+.webassets-cache
+
+# 업로드된 파일 및 결과
+uploads/
+results/
+ocr_results/
+ocr_results_v2/
+text_extracted/
+final_output/
+*.pdf
+*.tar.gz
+*.zip
+
+# 로그
+*.log
+nohup.out
+/tmp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 임시 파일
+ocr_processor.py
+ocr_processor_v2.py
+simple_text_extractor.py
+PROCESSING_SUMMARY.md
+/index.html

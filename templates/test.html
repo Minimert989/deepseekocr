@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>디버그 테스트</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #0f0;
+        }
+        .log {
+            background: #000;
+            padding: 20px;
+            border-radius: 5px;
+            max-height: 500px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+        }
+        input {
+            padding: 10px;
+            margin: 5px;
+            width: 400px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 OCR 시스템 디버그 테스트</h1>
+    
+    <div>
+        <h2>1. 서버 연결 테스트</h2>
+        <button onclick="testServer()">서버 연결 확인</button>
+        <div id="serverResult"></div>
+    </div>
+    
+    <div>
+        <h2>2. 파일 업로드 테스트</h2>
+        <input type="file" id="testFile" accept=".pdf">
+        <input type="text" id="testToken" placeholder="HF Token">
+        <button onclick="testUpload()">업로드 테스트</button>
+        <div id="uploadResult"></div>
+    </div>
+    
+    <div>
+        <h2>3. SSE 스트리밍 테스트</h2>
+        <input type="text" id="sessionId" placeholder="Session ID">
+        <button onclick="testStream()">스트림 테스트</button>
+        <button onclick="stopStream()">스트림 중지</button>
+    </div>
+    
+    <div class="log" id="logOutput"></div>
+    
+    <script>
+        let eventSource = null;
+        
+        function log(message, color = '#0f0') {
+            const logDiv = document.getElementById('logOutput');
+            const line = document.createElement('div');
+            line.style.color = color;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(line);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        async function testServer() {
+            log('서버 연결 테스트 시작...', '#ff0');
+            try {
+                const response = await fetch('/');
+                log(`서버 응답: ${response.status} ${response.statusText}`, '#0f0');
+                document.getElementById('serverResult').innerHTML = 
+                    `<span style="color: #0f0;">✅ 서버 정상</span>`;
+            } catch (error) {
+                log(`서버 오류: ${error.message}`, '#f00');
+                document.getElementById('serverResult').innerHTML = 
+                    `<span style="color: #f00;">❌ 서버 오류: ${error.message}</span>`;
+            }
+        }
+        
+        async function testUpload() {
+            const fileInput = document.getElementById('testFile');
+            const token = document.getElementById('testToken').value;
+            
+            if (!fileInput.files[0]) {
+                log('파일을 선택하세요', '#f00');
+                return;
+            }
+            
+            if (!token) {
+                log('토큰을 입력하세요', '#f00');
+                return;
+            }
+            
+            log('파일 업로드 시작...', '#ff0');
+            
+            const formData = new FormData();
+            formData.append('pdf', fileInput.files[0]);
+            formData.append('hf_token', token);
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                log(`업로드 응답 상태: ${response.status}`, '#0ff');
+                
+                const result = await response.json();
+                log(`업로드 결과: ${JSON.stringify(result)}`, '#0f0');
+                
+                document.getElementById('uploadResult').innerHTML = 
+                    `<pre style="color: #0f0;">${JSON.stringify(result, null, 2)}</pre>`;
+                
+                if (result.success) {
+                    log('이제 /process 엔드포인트를 호출하세요', '#ff0');
+                    
+                    // 자동으로 처리 시작
+                    const processResponse = await fetch('/process', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            filename: result.filename,
+                            hf_token: token
+                        })
+                    });
+                    
+                    const processResult = await processResponse.json();
+                    log(`처리 시작 결과: ${JSON.stringify(processResult)}`, '#0f0');
+                    
+                    if (processResult.success) {
+                        document.getElementById('sessionId').value = processResult.session_id;
+                        log(`Session ID 저장됨: ${processResult.session_id}`, '#0ff');
+                        log('이제 "스트림 테스트" 버튼을 클릭하세요', '#ff0');
+                    }
+                }
+                
+            } catch (error) {
+                log(`업로드 오류: ${error.message}`, '#f00');
+                document.getElementById('uploadResult').innerHTML = 
+                    `<span style="color: #f00;">❌ ${error.message}</span>`;
+            }
+        }
+        
+        function testStream() {
+            const sessionId = document.getElementById('sessionId').value;
+            
+            if (!sessionId) {
+                log('Session ID를 입력하세요', '#f00');
+                return;
+            }
+            
+            log(`스트림 연결 시도: /stream/${sessionId}`, '#ff0');
+            
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource(`/stream/${sessionId}`);
+            
+            eventSource.onopen = function() {
+                log('✅ SSE 연결 성공!', '#0f0');
+            };
+            
+            eventSource.onmessage = function(event) {
+                log(`📨 메시지 수신: ${event.data}`, '#0ff');
+                
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'log') {
+                        log(`  📋 로그: ${data.message}`, '#fff');
+                    } else if (data.type === 'complete') {
+                        log('🎉 처리 완료!', '#0f0');
+                        eventSource.close();
+                    } else if (data.type === 'error') {
+                        log(`❌ 오류: ${data.message}`, '#f00');
+                        eventSource.close();
+                    } else if (data.type === 'ping') {
+                        log('💓 Ping', '#666');
+                    }
+                } catch (e) {
+                    log(`JSON 파싱 오류: ${e.message}`, '#f00');
+                }
+            };
+            
+            eventSource.onerror = function(error) {
+                log(`❌ SSE 오류 발생`, '#f00');
+                log(`ReadyState: ${eventSource.readyState}`, '#f00');
+                log(`Error: ${JSON.stringify(error)}`, '#f00');
+            };
+        }
+        
+        function stopStream() {
+            if (eventSource) {
+                eventSource.close();
+                log('스트림 연결 종료', '#ff0');
+                eventSource = null;
+            }
+        }
+        
+        // 페이지 로드 시 서버 테스트
+        window.onload = () => {
+            testServer();
+        };
+    </script>
+</body>
+</html>
